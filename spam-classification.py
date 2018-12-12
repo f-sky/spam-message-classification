@@ -1,25 +1,33 @@
-import matplotlib.pyplot as plt
-from sklearn.metrics import f1_score
-from torch.autograd import backward
-from torch.optim import lr_scheduler, Adam
-from torch.utils.data import Dataset, DataLoader
-
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import f1_score, precision_score, accuracy_score
+from sklearn.metrics import f1_score, precision_score
+from torch.optim import Adam, lr_scheduler
+from torch.utils.data import DataLoader
+from sklearn.model_selection import train_test_split
 from base_utils import load_model
 from spam_utils import *
+from sklearn.metrics import accuracy_score
 
-num_epochs = 2
+num_epochs = 20
 max_len = 30
 
 
 def train(model, loss_fn, optimizer, dataloaders):
     def compute_acc(x, y):
-        # print((x.squeeze() > 0.5).sum()/y.shape[0])
         return accuracy_score(y.squeeze(), x.squeeze() > 0.5)
 
     def compute_f1(x, y):
         return f1_score(y.squeeze(), x.squeeze() > 0.5)
 
-    fit(model, loss_fn, optimizer, dataloaders, {'accuracy': compute_acc, 'f1': compute_f1}, num_epochs=num_epochs)
+    def compute_precision(x, y):
+        return precision_score(y.squeeze(), x.squeeze() > 0.5)
+
+    metrics = {
+        # 'accuracy': compute_acc,
+        'precision': compute_precision,
+        'f1': compute_f1,
+    }
+    fit(model, loss_fn, optimizer, dataloaders, metrics_functions=metrics, num_epochs=num_epochs)
 
 
 def test(corpus: Corpus, model, optimizer):
@@ -46,7 +54,43 @@ def test(corpus: Corpus, model, optimizer):
         pred = out > 0.5
         pred = pred.cpu().numpy().squeeze()
         predictions.append([smsids[i], 'spam' if pred == 1 else 'ham'])
-    with open('submission.csv', 'w', newline='') as f:
+    with open('data/submission.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(predictions)
+
+
+def train_classifier(corpus: Corpus, mode):
+    textFeatures = corpus.train_sentences.copy() + corpus.test_sentences.copy()
+    num_train_and_dev = len(corpus.train_sentences)
+    vectorizer = TfidfVectorizer("english")
+    features_total = vectorizer.fit_transform(textFeatures)
+    features = features_total[0:num_train_and_dev]
+    test_features = features_total[num_train_and_dev:]
+    features_train, features_test, labels_train, labels_test = train_test_split(features, corpus.labels, test_size=0.3,
+                                                                                random_state=111)
+    if mode == 'svm':
+        from sklearn.svm import SVC
+
+        model = SVC(kernel='sigmoid', gamma=1.0)
+        model.fit(features_train, labels_train)
+        prediction = model.predict(features_test)
+        print(accuracy_score(labels_test, prediction))
+    else:
+        from sklearn.naive_bayes import MultinomialNB
+
+        model = MultinomialNB(alpha=0.2)
+        model.fit(features_train, labels_train)
+        prediction = model.predict(features_test)
+        print(accuracy_score(labels_test, prediction))
+    return model, test_features
+
+
+def test_classifier(model, test_features, corpus: Corpus):
+    predictions = [['SmsId', 'Label']]
+    ys = model.predict(test_features)
+    ys = list(map(lambda x: 'spam' if x == 1 else 'ham', ys))
+    predictions = predictions + np.array([corpus.test_smsids, ys]).transpose().tolist()
+    with open('data/submission.csv', 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerows(predictions)
 
@@ -54,9 +98,11 @@ def test(corpus: Corpus, model, optimizer):
 if __name__ == '__main__':
     corpus = Corpus()
     model = Model(corpus, num_embeddings=None, embedding_dim=50, hidden_size=128, hidden_dim=64).cuda()
-    optimizer = Adam(model.parameters())
+    optimizer = Adam(model.parameters(), lr=0.001)
     loss_fn = nn.BCELoss().cuda()
     dataloaders = {'train': DataLoader(SpamSet(True, corpus, max_len=max_len), batch_size=8, shuffle=True),
                    'dev': DataLoader(SpamSet(False, corpus, max_len=max_len), batch_size=8, shuffle=False)}
-    train(model, loss_fn, optimizer, dataloaders)
+    # train(model, loss_fn, optimizer, dataloaders)
     # test(corpus, model, optimizer)
+    model, test_features = train_classifier(corpus, 'MultinomialNB')
+    test_classifier(model, test_features, corpus)

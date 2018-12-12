@@ -1,16 +1,16 @@
-import os
 import csv
-
-from nltk import word_tokenize
-from sklearn.metrics import accuracy_score
-from torch import nn
-from torch.nn import Module
-from torch.utils.data import Dataset
+import os
+import string
 
 import numpy as np
 import torch
+from nltk import word_tokenize, SnowballStemmer
+from nltk.corpus import stopwords
 from progressbar import progressbar
+from torch import nn
 from torch.autograd import Variable
+from torch.nn import Module
+from torch.utils.data import Dataset
 
 from base_utils import History, AverageMeter, save_model
 
@@ -20,27 +20,48 @@ def read_csv(filename):
         return np.array(list(csv.reader(csvDataFile)))
 
 
+def pre_process(text):
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    text = [word for word in text.split() if word.lower() not in stopwords.words('english')]
+    words = ""
+    for i in text:
+        stemmer = SnowballStemmer("english")
+        words += (stemmer.stem(i)) + " "
+    return words
+
+
 class Corpus:
     def __init__(self):
         super().__init__()
         self.word2idx = {'<pad>': 0}
         self.idx2word = ['<pad>']
         self.sentence_lengths = []
-        data = read_csv('data/train.csv')
-        data = data[1:]
-        data = np.array([[row[0], ','.join(row[1:]).lower()] for row in data])
-        labels = np.array(list(map(lambda x: 0.0 if x == 'ham' else 1.0, data[:, 0])))
-        sentences = data[:, 1]
-        for sentence in sentences:
-            words = word_tokenize(sentence)
+        traindata = read_csv('data/train.csv')
+        traindata = traindata[1:]
+        test_data = read_csv('data/test.csv')
+        test_data = test_data[1:]
+        traindata = np.array([[row[0], ','.join(row[1:]).lower()] for row in traindata])
+        test_data = np.array([[row[0],','.join(row[1:]).lower()] for row in test_data])
+        labels = np.array(list(map(lambda x: 0.0 if x == 'ham' else 1.0, traindata[:, 0])))
+        self.test_smsids = np.array(list(map(int, test_data[:, 0])),dtype=int)
+        raw_sentences = traindata[:, 1]
+        self.train_sentences = []
+        self.test_sentences = []
+        print('reading and preprocessing training data')
+        for sentence in progressbar(raw_sentences):
+            sentence = pre_process(sentence)
+            self.train_sentences.append(sentence)
+            words = sentence.split()
             self.sentence_lengths.append(len(words))
             for word in words:
                 if word not in self.word2idx.keys():
                     self.word2idx[word] = len(self.idx2word)
                     self.idx2word.append(word)
+        for sentence in progressbar(test_data[:,1]):
+            sentence = pre_process(sentence)
+            self.test_sentences.append(sentence)
         self.word2idx['<unknown>'] = len(self.idx2word)
         self.idx2word.append('<unknown>')
-        self.sentences = sentences
         self.labels = labels
 
     def __len__(self):
@@ -78,7 +99,7 @@ class SpamSet(Dataset):
 
     def __getitem__(self, index):
         idx = index if self.train else self.num_train + index
-        x = self.sentence_to_indices(self.corpus.sentences[idx], self.max_len)
+        x = self.sentence_to_indices(self.corpus.train_sentences[idx], self.max_len)
         y = self.corpus.labels[idx]
         return torch.LongTensor(x), torch.FloatTensor([y])
 
@@ -86,7 +107,7 @@ class SpamSet(Dataset):
         return self.num_train if self.train else self.num_dev
 
     def sentence_to_indices(self, sentence, max_len):
-        words = word_tokenize(sentence)
+        words = sentence.split()
         result = np.zeros(max_len, dtype=np.long)
         for i, word in enumerate(words):
             if i >= max_len: break
@@ -122,7 +143,6 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
             loaders = progressbar(dataloaders[phase]) if use_progressbar else dataloaders[phase]
             for data in loaders:
                 x, y = data
-                # y = y.squeeze()
                 x = x.reshape((-1, max_len))
                 nsamples = x.shape[0]
                 x_var = Variable(x.cuda())
@@ -177,6 +197,6 @@ def read_glove_vecs(glove_file='data/glove.6B.50d.txt'):
 
 
 if __name__ == '__main__':
+    # print(pre_process('Ok lar... Joking wif u oni...'))
     corpus = Corpus()
-    s = SpamSet(True, corpus, 18)
-    print(s[0][0].dtype)
+    print(len(corpus))
