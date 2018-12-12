@@ -13,7 +13,7 @@ from torch.autograd import Variable
 from torch.nn import Module
 from torch.utils.data import Dataset
 
-from base_utils import History, AverageMeter, save_model
+from base_utils import History, AverageMeter, save_model, single_edge_pad
 
 
 def read_csv(filename):
@@ -34,47 +34,12 @@ def pre_process(text: str):
     return words
 
 
-class Corpus:
-    def __init__(self):
-        super().__init__()
-        self.word2idx = {'<pad>': 0}
-        self.idx2word = ['<pad>']
-        self.sentence_lengths = []
-        traindata = read_csv('data/train.csv')
-        traindata = traindata[1:]
-        test_data = read_csv('data/test.csv')
-        test_data = test_data[1:]
-        traindata = np.array([[row[0], ','.join(row[1:]).lower()] for row in traindata])
-        test_data = np.array([[row[0], ','.join(row[1:]).lower()] for row in test_data])
-        labels = np.array(list(map(lambda x: 0.0 if x == 'ham' else 1.0, traindata[:, 0])))
-        self.test_smsids = np.array(list(map(int, test_data[:, 0])), dtype=int)
-        raw_sentences = traindata[:, 1]
-        self.train_sentences = []
-        self.test_sentences = []
-        print('reading and preprocessing training data')
-        for sentence in progressbar(raw_sentences):
-            sentence = pre_process(sentence)
-            self.train_sentences.append(sentence)
-            words = sentence.split()
-            self.sentence_lengths.append(len(words))
-            for word in words:
-                if word not in self.word2idx.keys():
-                    self.word2idx[word] = len(self.idx2word)
-                    self.idx2word.append(word)
-        for sentence in progressbar(test_data[:, 1]):
-            sentence = pre_process(sentence)
-            self.test_sentences.append(sentence)
-        self.word2idx['<unknown>'] = len(self.idx2word)
-        self.idx2word.append('<unknown>')
-        self.labels = labels
-
-    def __len__(self):
-        return len(self.idx2word)
-
-
 class Corpus_v2:
     def __init__(self):
         super().__init__()
+        sentence_paths = 'data/preprocess/{}'
+        train_preprocess_sentence_path = sentence_paths.format('train.npy')
+        test_preprocess_sentence_path = sentence_paths.format('test.npy')
         traindata = read_csv('data/train.csv')
         traindata = traindata[1:]
         test_data = read_csv('data/test.csv')
@@ -87,12 +52,20 @@ class Corpus_v2:
         self.train_sentences = []
         self.test_sentences = []
         print('reading and preprocessing training data')
-        for sentence in progressbar(raw_sentences):
-            sentence = pre_process(sentence)
-            self.train_sentences.append(sentence)
-        for sentence in progressbar(test_data[:, 1]):
-            sentence = pre_process(sentence)
-            self.test_sentences.append(sentence)
+        if os.path.exists(train_preprocess_sentence_path):
+            self.train_sentences = np.load(train_preprocess_sentence_path).tolist()
+        else:
+            for sentence in progressbar(raw_sentences):
+                sentence = pre_process(sentence)
+                self.train_sentences.append(sentence)
+            np.save(train_preprocess_sentence_path, self.train_sentences)
+        if os.path.exists(test_preprocess_sentence_path):
+            self.test_sentences = np.load(test_preprocess_sentence_path).tolist()
+        else:
+            for sentence in progressbar(test_data[:, 1]):
+                sentence = pre_process(sentence)
+                self.test_sentences.append(sentence)
+            np.save(test_preprocess_sentence_path, self.test_sentences)
         vectorizer = TfidfVectorizer("english")
         textFeatures = self.train_sentences.copy() + self.test_sentences.copy()
         features_total = vectorizer.fit_transform(textFeatures)
@@ -101,60 +74,48 @@ class Corpus_v2:
         self.test_features = features_total[num_train_and_dev:]
         self.labels = labels
 
-    def __len__(self):
-        return len(self.idx2word)
 
-
-class Model(Module):
-    def __init__(self, corpus: Corpus, num_embeddings=None, embedding_dim=50, hidden_size=64, hidden_dim=32):
+class Model_v2(Module):
+    def __init__(self, corpus: Corpus_v2,max_len):
         super().__init__()
-        num_embeddings = len(corpus) if num_embeddings is None else num_embeddings
-        self.embedding = nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
-        self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True)
-        self.fcs = nn.Sequential(nn.Linear(in_features=hidden_size, out_features=hidden_dim),
+        feature_size = max_len
+        self.fcs = nn.Sequential(nn.Linear(in_features=feature_size, out_features=256),
                                  nn.ReLU(),
-                                 nn.Dropout(),
-                                 nn.Linear(in_features=hidden_dim, out_features=1),
+                                 nn.Linear(in_features=256, out_features=128),
+                                 nn.ReLU(),
+                                 nn.Linear(in_features=128, out_features=1),
                                  nn.Sigmoid()
                                  )
 
     def forward(self, x):
-        embed = self.embedding(x)
-        out, _ = self.lstm(embed)
-        return self.fcs(out[:, -1, :])
+        return self.fcs(x)
 
 
-class SpamSet(Dataset):
-    def __init__(self, train, corpus: Corpus, max_len):
+class SpamSet_v2(Dataset):
+    def __init__(self, train, corpus: Corpus_v2, max_len):
         super().__init__()
         self.train = train
         self.corpus = corpus
         self.num_total = len(corpus.labels)
-        self.num_train = int(0.8 * self.num_total)
+        self.num_train = int(0.7 * self.num_total)
         self.num_dev = self.num_total - self.num_train
         self.max_len = max_len
 
     def __getitem__(self, index):
         idx = index if self.train else self.num_train + index
-        x = self.sentence_to_indices(self.corpus.train_sentences[idx], self.max_len)
+        x = self.corpus.train_features[idx]
         y = self.corpus.labels[idx]
-        return torch.LongTensor(x), torch.FloatTensor([y])
+        x = x.data
+        x = single_edge_pad(x, self.max_len)
+        return torch.FloatTensor(x), torch.FloatTensor([y])
 
     def __len__(self):
         return self.num_train if self.train else self.num_dev
 
-    def sentence_to_indices(self, sentence, max_len):
-        words = sentence.split()
-        result = np.zeros(max_len, dtype=np.long)
-        for i, word in enumerate(words):
-            if i >= max_len: break
-            result[i] = self.corpus.word2idx[word]
-        return result
 
-
-def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epochs=1, scheduler=None, begin_epoch=0,
-        save=True,
-        save_model_dir='data/models', history=None, use_progressbar=False, plot_every_epoch=False):
+def fit_v2(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epochs=1, scheduler=None, begin_epoch=0,
+           save=True,
+           save_model_dir='data/models', history=None, use_progressbar=False, plot_every_epoch=False):
     if metrics_functions is None:
         metrics_functions = {}
     if save and save_model_dir is None:
@@ -164,7 +125,6 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
     num_epochs += begin_epoch
     if history is None:
         history = History(['loss', *metrics_functions.keys()])
-    max_len = dataloaders['train'].dataset.max_len
     for epoch in range(begin_epoch, num_epochs):
         print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
         for phase in ['train', 'dev']:
@@ -180,7 +140,6 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
             loaders = progressbar(dataloaders[phase]) if use_progressbar else dataloaders[phase]
             for data in loaders:
                 x, y = data
-                x = x.reshape((-1, max_len))
                 nsamples = x.shape[0]
                 x_var = Variable(x.cuda())
                 y_var = Variable(y.cuda())
@@ -213,27 +172,8 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
         history.plot()
 
 
-def read_glove_vecs(glove_file='data/glove.6B.50d.txt'):
-    with open(glove_file, 'r', encoding='UTF-8') as f:
-        words = set()
-        word_to_vec_map = {}
-        for line in f:
-            line = line.strip().split()
-            curr_word = line[0]
-            words.add(curr_word)
-            word_to_vec_map[curr_word] = np.array(line[1:], dtype=np.float64)
-
-        i = 1
-        words_to_index = {}
-        index_to_words = {}
-        for w in sorted(words):
-            words_to_index[w] = i
-            index_to_words[i] = w
-            i = i + 1
-    return words_to_index, index_to_words, word_to_vec_map
-
-
 if __name__ == '__main__':
-    print(pre_process('Ok lar... Joking wif u oni...'))
-    # corpus = Corpus()
-    # print(len(corpus))
+    corpus = Corpus_v2()
+    s = SpamSet_v2(True, corpus,max_len=30)
+    x, y = s[1]
+    print(x)

@@ -1,4 +1,16 @@
 import os
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+import cv2
+from PIL import Image
+from torch import nn
+from torch.nn import Module
+from torch.autograd import backward, Variable
+from torch.optim import lr_scheduler, Adam
+from torch.utils.data import Dataset, DataLoader
+from torchvision.transforms import transforms
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,7 +46,7 @@ class History:
         for k in metrics:
             self.records[k] = {'train': [], 'dev': []}
         cmap = plt.get_cmap('gnuplot')
-        self.colors = [cmap(i) for i in np.linspace(0, 1, 2*(len(metrics)+1))]
+        self.colors = [cmap(i) for i in np.linspace(0, 1, 2 * (len(metrics) + 1))]
 
     def load_dict(self, other):
         for k in self.keys:
@@ -94,3 +106,12 @@ def save_model(net, optim, epoch, model_dir, history=None):
     if history is not None:
         obj['history'] = history
     torch.save(obj, os.path.join(model_dir, '{}.pth'.format(epoch)))
+
+
+def single_edge_pad(x: np.ndarray, maxlen):
+    if x.shape[0] < maxlen:
+        return np.concatenate((x, [0] * (maxlen - x.shape[0])))
+    elif x.shape[0] == maxlen:
+        return x
+    else:
+        return x[:maxlen]
