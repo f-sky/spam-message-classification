@@ -2,6 +2,7 @@ import os
 import csv
 
 from nltk import word_tokenize
+from sklearn.metrics import accuracy_score
 from torch import nn
 from torch.nn import Module
 from torch.utils.data import Dataset
@@ -20,8 +21,7 @@ def read_csv(filename):
 
 
 class Corpus:
-
-    def __init__(self) -> None:
+    def __init__(self):
         super().__init__()
         self.word2idx = {'<pad>': 0}
         self.idx2word = ['<pad>']
@@ -38,6 +38,8 @@ class Corpus:
                 if word not in self.word2idx.keys():
                     self.word2idx[word] = len(self.idx2word)
                     self.idx2word.append(word)
+        self.word2idx['<unknown>'] = len(self.idx2word)
+        self.idx2word.append('<unknown>')
         self.sentences = sentences
         self.labels = labels
 
@@ -94,7 +96,7 @@ class SpamSet(Dataset):
 
 def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epochs=1, scheduler=None, begin_epoch=0,
         save=True,
-        save_model_dir='data/models', history=None):
+        save_model_dir='data/models', history=None, use_progressbar=False, plot_every_epoch=False):
     if metrics_functions is None:
         metrics_functions = {}
     if save and save_model_dir is None:
@@ -106,32 +108,33 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
         history = History(['loss', *metrics_functions.keys()])
     max_len = dataloaders['train'].dataset.max_len
     for epoch in range(begin_epoch, num_epochs):
-        meters = {'loss': AverageMeter()}
-        for k in metrics_functions.keys():
-            meters[k] = AverageMeter()
         print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
         for phase in ['train', 'dev']:
+            meters = {'loss': AverageMeter()}
+            for k in metrics_functions.keys():
+                meters[k] = AverageMeter()
             if phase == 'train':
                 if scheduler is not None:
                     scheduler.step()
                 model.train()
             else:
                 model.eval()
-            for data in progressbar(dataloaders[phase]):
+            loaders = progressbar(dataloaders[phase]) if use_progressbar else dataloaders[phase]
+            for data in loaders:
                 x, y = data
                 # y = y.squeeze()
                 x = x.reshape((-1, max_len))
                 nsamples = x.shape[0]
                 x_var = Variable(x.cuda())
                 y_var = Variable(y.cuda())
-                # x_var = Variable(x)
-                # y_var = Variable(y)
                 optimizer.zero_grad()
                 scores = model(x_var)
-                # print(scores, y_var)
                 loss = loss_fn(scores, y_var)
+
+                meters['loss'].update(loss.item(), nsamples)
                 for k, f in metrics_functions.items():
-                    result = f(scores.detach().cpu() > 0, y.detach().cpu())
+                    result = f(scores.detach().cpu().numpy(),
+                               y.detach().cpu().numpy().astype(np.int64))
                     meters[k].update(result, nsamples)
                 if phase == 'train':
                     loss.backward()
@@ -147,6 +150,9 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
                 history.records[k][phase].append(meters[k].avg)
         if save:
             save_model(model, optimizer, epoch, save_model_dir)
+        if plot_every_epoch:
+            history.plot()
+    if not plot_every_epoch:
         history.plot()
 
 
