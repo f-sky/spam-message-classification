@@ -1,3 +1,4 @@
+import csv
 import os
 
 import matplotlib.pyplot as plt
@@ -93,3 +94,7 @@ def save_model(net, optim, epoch, model_dir, history=None):
     if history is not None:
         obj['history'] = history
     torch.save(obj, os.path.join(model_dir, '{}.pth'.format(epoch)))
+
+def read_csv(filename):
+    with open(filename) as csvDataFile:
+        return np.array(list(csv.reader(csvDataFile)))

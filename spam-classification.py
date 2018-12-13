@@ -8,6 +8,7 @@ from base_utils import load_model
 from spam_utils import *
 from sklearn.metrics import accuracy_score
 from spam_utils_v2 import *
+from spam_utils_v3 import Corpus_v3, Model_v3, SpamSet_v3
 
 num_epochs = 40
 max_len = 30
@@ -123,16 +124,53 @@ def test_classifier(model, test_features, corpus: Corpus):
         writer.writerows(predictions)
 
 
+def train_v3(model, loss_fn, optimizer, dataloaders, scheduler):
+    def compute_precision(y_true, y_pred):
+        return precision_score(y_true.squeeze(), y_pred.squeeze() >= 0.5)
+
+    metrics = {
+        'precision': compute_precision
+    }
+    fit_v2(model, loss_fn, optimizer, dataloaders, scheduler=scheduler, metrics_functions=metrics,
+           num_epochs=num_epochs)
+
+
+def test_v3(corpus:Corpus_v3, model, optimizer):
+    load_model(model, optimizer, 'data/model')
+    model.eval()
+
+    sentences = corpus.test_sentences
+    smsids=corpus.test_smsids
+    num_test = len(sentences)
+    sentence_indices = np.zeros((num_test, max_len), dtype=np.long)
+    for i, sentence in enumerate(sentences):
+        words = sentence.split()
+        for j, word in enumerate(words):
+            if j >= max_len: break
+            if word in corpus.word2idx.keys():
+                sentence_indices[i, j] = corpus.word2idx[word]
+
+    predictions = [['SmsId', 'Label']]
+    for i in progressbar(range(sentence_indices.shape[0])):
+        out = model(torch.LongTensor(sentence_indices[i]).reshape((1, -1)).cuda())
+        pred = out >= 0.5
+        pred = pred.cpu().numpy().squeeze()
+        predictions.append([smsids[i], 'spam' if pred == 1 else 'ham'])
+    with open('data/submission.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(predictions)
+
+
 if __name__ == '__main__':
     # ---------------embedding rnn------------------
-    corpus = Corpus()
-    model = Model(corpus, num_embeddings=None, embedding_dim=50, hidden_size=256, hidden_dim=64).cuda()
-    optimizer = Adam(model.parameters(), lr=0.001)
-    loss_fn = nn.BCELoss().cuda()
-    dataloaders = {'train': DataLoader(SpamSet(True, corpus, max_len=max_len), batch_size=128, shuffle=True),
-                   'dev': DataLoader(SpamSet(False, corpus, max_len=max_len), batch_size=128, shuffle=False)}
-    train(model, loss_fn, optimizer, dataloaders)
-    test(corpus, model, optimizer)
+    # corpus = Corpus()
+    # model = Model(corpus, num_embeddings=None, embedding_dim=50, hidden_size=256, hidden_dim=64).cuda()
+    # optimizer = Adam(model.parameters(), lr=0.001)
+    # loss_fn = nn.BCELoss().cuda()
+    # dataloaders = {'train': DataLoader(SpamSet(True, corpus, max_len=max_len), batch_size=128, shuffle=True),
+    #                'dev': DataLoader(SpamSet(False, corpus, max_len=max_len), batch_size=128, shuffle=False)}
+    # train(model, loss_fn, optimizer, dataloaders)
+    # test(corpus, model, optimizer)
     # ------------------sklearn-----------
 
     # corpus = Corpus()
@@ -148,3 +186,13 @@ if __name__ == '__main__':
     # scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.3)
     # train_v2(model, loss_fn, optimizer, dataloaders, scheduler)
     # test_v2(corpus, model, optimizer)
+    # --------------lstm pretrained weights by pytorch--------------------
+    corpus = Corpus_v3()
+    model = Model_v3(corpus).cuda()
+    optimizer = Adam(model.parameters(), lr=0.001)
+    loss_fn = nn.BCELoss().cuda()
+    dataloaders = {'train': DataLoader(SpamSet_v3(True, corpus,30), batch_size=128, shuffle=True),
+                   'dev': DataLoader(SpamSet_v3(False, corpus,30), batch_size=128, shuffle=False)}
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.3)
+    train_v3(model, loss_fn, optimizer, dataloaders, scheduler)
+    test_v3(corpus, model, optimizer)

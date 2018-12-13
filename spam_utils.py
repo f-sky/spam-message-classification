@@ -12,12 +12,7 @@ from torch.autograd import Variable
 from torch.nn import Module
 from torch.utils.data import Dataset
 
-from base_utils import History, AverageMeter, save_model
-
-
-def read_csv(filename):
-    with open(filename) as csvDataFile:
-        return np.array(list(csv.reader(csvDataFile)))
+from base_utils import History, AverageMeter, save_model, read_csv
 
 
 def pre_process(text: str):
@@ -194,26 +189,6 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
             history.plot()
     if not plot_every_epoch:
         history.plot()
-
-
-def read_glove_vecs(glove_file='data/glove.6B.50d.txt'):
-    with open(glove_file, 'r', encoding='UTF-8') as f:
-        words = set()
-        word_to_vec_map = {}
-        for line in f:
-            line = line.strip().split()
-            curr_word = line[0]
-            words.add(curr_word)
-            word_to_vec_map[curr_word] = np.array(line[1:], dtype=np.float64)
-
-        i = 1
-        words_to_index = {}
-        index_to_words = {}
-        for w in sorted(words):
-            words_to_index[w] = i
-            index_to_words[i] = w
-            i = i + 1
-    return words_to_index, index_to_words, word_to_vec_map
 
 
 if __name__ == '__main__':
