@@ -1,16 +1,4 @@
 import os
-import numpy as np
-import torch
-import matplotlib.pyplot as plt
-import cv2
-from PIL import Image
-from torch import nn
-from torch.nn import Module
-from torch.autograd import backward, Variable
-from torch.optim import lr_scheduler, Adam
-from torch.utils.data import Dataset, DataLoader
-from torchvision.transforms import transforms
-import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -72,7 +60,6 @@ class History:
         ax1.set_ylabel('Loss')
         ax1.set_xlabel('Epoch')
         ax2.set_ylabel('Metrics')
-        print(labs)
         ax1.legend(lns, labs, loc=7)
         plt.show()
 
@@ -106,12 +93,3 @@ def save_model(net, optim, epoch, model_dir, history=None):
     if history is not None:
         obj['history'] = history
     torch.save(obj, os.path.join(model_dir, '{}.pth'.format(epoch)))
-
-
-def single_edge_pad(x: np.ndarray, maxlen):
-    if x.shape[0] < maxlen:
-        return np.concatenate((x, [0] * (maxlen - x.shape[0])))
-    elif x.shape[0] == maxlen:
-        return x
-    else:
-        return x[:maxlen]

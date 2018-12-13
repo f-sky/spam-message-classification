@@ -60,6 +60,7 @@ class Corpus:
                 sentence = pre_process(sentence)
                 self.train_sentences.append(sentence)
             np.save(train_preprocess_sentence_path, self.train_sentences)
+        self.collect(self.train_sentences)
         if os.path.exists(test_preprocess_sentence_path):
             self.test_sentences = np.load(test_preprocess_sentence_path).tolist()
         else:
@@ -74,6 +75,13 @@ class Corpus:
     def __len__(self):
         return len(self.idx2word)
 
+    def collect(self, sentences):
+        for sentence in sentences:
+            for word in sentence.split():
+                if word not in self.word2idx.keys():
+                    self.word2idx[word] = len(self.idx2word)
+                    self.idx2word.append(word)
+
 
 class Model(Module):
     def __init__(self, corpus: Corpus, num_embeddings=None, embedding_dim=50, hidden_size=64, hidden_dim=32):
@@ -81,10 +89,15 @@ class Model(Module):
         num_embeddings = len(corpus) if num_embeddings is None else num_embeddings
         self.embedding = nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
         self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True)
-        self.fcs = nn.Sequential(nn.Linear(in_features=hidden_size, out_features=hidden_dim),
+        # self.fcs = nn.Sequential(nn.Linear(in_features=hidden_size, out_features=hidden_dim),
+        #                          nn.ReLU(),
+        #                          nn.Dropout(),
+        #                          nn.Linear(in_features=hidden_dim, out_features=1),
+        #                          nn.Sigmoid()
+        #                          )
+        self.fcs = nn.Sequential(nn.Linear(in_features=hidden_size, out_features=256),
                                  nn.ReLU(),
-                                 nn.Dropout(),
-                                 nn.Linear(in_features=hidden_dim, out_features=1),
+                                 nn.Linear(in_features=128, out_features=1),
                                  nn.Sigmoid()
                                  )
 
@@ -160,8 +173,8 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
 
                 meters['loss'].update(loss.item(), nsamples)
                 for k, f in metrics_functions.items():
-                    result = f(scores.detach().cpu().numpy(),
-                               y.detach().cpu().numpy().astype(np.int64))
+                    result = f(y.detach().cpu().numpy().astype(np.int64),
+                               scores.detach().cpu().numpy())
                     meters[k].update(result, nsamples)
                 if phase == 'train':
                     loss.backward()

@@ -9,24 +9,16 @@ from spam_utils import *
 from sklearn.metrics import accuracy_score
 from spam_utils_v2 import *
 
-num_epochs = 20
+num_epochs = 40
 max_len = 30
 
 
 def train(model, loss_fn, optimizer, dataloaders):
-    def compute_acc(x, y):
-        return accuracy_score(y.squeeze(), x.squeeze() > 0.5)
-
-    def compute_f1(x, y):
-        return f1_score(y.squeeze(), x.squeeze() > 0.5)
-
-    def compute_precision(x, y):
-        return precision_score(y.squeeze(), x.squeeze() > 0.5)
+    def compute_precision(y_true, y_pred):
+        return precision_score(y_true, y_pred >= 0.5)
 
     metrics = {
-        # 'accuracy': compute_acc,
         'precision': compute_precision,
-        'f1': compute_f1,
     }
     fit(model, loss_fn, optimizer, dataloaders, metrics_functions=metrics, num_epochs=num_epochs)
 
@@ -52,7 +44,7 @@ def test(corpus: Corpus, model, optimizer):
     predictions = [['SmsId', 'Label']]
     for i in progressbar(range(sentence_indices.shape[0])):
         out = model(torch.LongTensor(sentence_indices[i]).reshape((1, -1)).cuda())
-        pred = out > 0.5
+        pred = out >= 0.5
         pred = pred.cpu().numpy().squeeze()
         predictions.append([smsids[i], 'spam' if pred == 1 else 'ham'])
     with open('data/submission.csv', 'w', newline='') as f:
@@ -60,14 +52,15 @@ def test(corpus: Corpus, model, optimizer):
         writer.writerows(predictions)
 
 
-def train_v2(model, loss_fn, optimizer, dataloaders):
+def train_v2(model, loss_fn, optimizer, dataloaders, scheduler):
     def compute_precision(y_true, y_pred):
         return precision_score(y_true.squeeze(), y_pred.squeeze() >= 0.5)
 
     metrics = {
         'precision': compute_precision
     }
-    fit_v2(model, loss_fn, optimizer, dataloaders, metrics_functions=metrics, num_epochs=num_epochs)
+    fit_v2(model, loss_fn, optimizer, dataloaders, scheduler=scheduler, metrics_functions=metrics,
+           num_epochs=num_epochs)
 
 
 def test_v2(corpus: Corpus_v2, model, optimizer):
@@ -132,25 +125,26 @@ def test_classifier(model, test_features, corpus: Corpus):
 
 if __name__ == '__main__':
     # ---------------embedding rnn------------------
-    # corpus = Corpus()
-    # model = Model(corpus, num_embeddings=None, embedding_dim=50, hidden_size=128, hidden_dim=64).cuda()
-    # optimizer = Adam(model.parameters(), lr=0.001)
-    # loss_fn = nn.BCELoss().cuda()
-    # dataloaders = {'train': DataLoader(SpamSet(True, corpus, max_len=max_len), batch_size=8, shuffle=True),
-    #                'dev': DataLoader(SpamSet(False, corpus, max_len=max_len), batch_size=8, shuffle=False)}
-    # train(model, loss_fn, optimizer, dataloaders)
-    # test(corpus, model, optimizer)
+    corpus = Corpus()
+    model = Model(corpus, num_embeddings=None, embedding_dim=50, hidden_size=256, hidden_dim=64).cuda()
+    optimizer = Adam(model.parameters(), lr=0.001)
+    loss_fn = nn.BCELoss().cuda()
+    dataloaders = {'train': DataLoader(SpamSet(True, corpus, max_len=max_len), batch_size=128, shuffle=True),
+                   'dev': DataLoader(SpamSet(False, corpus, max_len=max_len), batch_size=128, shuffle=False)}
+    train(model, loss_fn, optimizer, dataloaders)
+    test(corpus, model, optimizer)
     # ------------------sklearn-----------
 
     # corpus = Corpus()
     # model, test_features = train_classifier(corpus, 'mlp')
     # test_classifier(model, test_features, corpus)
     # --------------sklearn mlp by pytorch--------------------
-    corpus = Corpus_v2()
-    model = Model_v2(corpus).cuda()
-    optimizer = Adam(model.parameters(), lr=0.001)
-    loss_fn = nn.BCELoss().cuda()
-    dataloaders = {'train': DataLoader(SpamSet_v2(True, corpus), batch_size=128, shuffle=True),
-                   'dev': DataLoader(SpamSet_v2(False, corpus), batch_size=128, shuffle=False)}
-    train_v2(model, loss_fn, optimizer, dataloaders)
-    test_v2(corpus, model, optimizer)
+    # corpus = Corpus_v2()
+    # model = Model_v2(corpus).cuda()
+    # optimizer = Adam(model.parameters(), lr=0.001)
+    # loss_fn = nn.BCELoss().cuda()
+    # dataloaders = {'train': DataLoader(SpamSet_v2(True, corpus), batch_size=128, shuffle=True),
+    #                'dev': DataLoader(SpamSet_v2(False, corpus), batch_size=128, shuffle=False)}
+    # scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.3)
+    # train_v2(model, loss_fn, optimizer, dataloaders, scheduler)
+    # test_v2(corpus, model, optimizer)

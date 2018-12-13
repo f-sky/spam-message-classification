@@ -4,7 +4,7 @@ import string
 
 import numpy as np
 import torch
-from nltk import word_tokenize, SnowballStemmer
+from nltk import SnowballStemmer
 from nltk.corpus import stopwords
 from progressbar import progressbar
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -13,7 +13,7 @@ from torch.autograd import Variable
 from torch.nn import Module
 from torch.utils.data import Dataset
 
-from base_utils import History, AverageMeter, save_model, single_edge_pad
+from base_utils import History, AverageMeter, save_model
 
 
 def read_csv(filename):
@@ -78,11 +78,11 @@ class Model_v2(Module):
     def __init__(self, corpus: Corpus_v2):
         super().__init__()
         feature_size=corpus.train_features[0].toarray().squeeze().shape[0]
-        self.fcs = nn.Sequential(nn.Linear(in_features=feature_size, out_features=256),
+        self.fcs = nn.Sequential(nn.Linear(in_features=feature_size, out_features=128),
                                  nn.ReLU(),
-                                 nn.Linear(in_features=256, out_features=128),
+                                 nn.Linear(in_features=128, out_features=64),
                                  nn.ReLU(),
-                                 nn.Linear(in_features=128, out_features=1),
+                                 nn.Linear(in_features=64, out_features=1),
                                  nn.Sigmoid()
                                  )
 
