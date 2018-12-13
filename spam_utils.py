@@ -7,7 +7,6 @@ import torch
 from nltk import word_tokenize, SnowballStemmer
 from nltk.corpus import stopwords
 from progressbar import progressbar
-from sklearn.feature_extraction.text import TfidfVectorizer
 from torch import nn
 from torch.autograd import Variable
 from torch.nn import Module
@@ -40,6 +39,9 @@ class Corpus:
         self.word2idx = {'<pad>': 0}
         self.idx2word = ['<pad>']
         self.sentence_lengths = []
+        sentence_paths = 'data/preprocess/{}'
+        train_preprocess_sentence_path = sentence_paths.format('train.npy')
+        test_preprocess_sentence_path = sentence_paths.format('test.npy')
         traindata = read_csv('data/train.csv')
         traindata = traindata[1:]
         test_data = read_csv('data/test.csv')
@@ -51,54 +53,22 @@ class Corpus:
         raw_sentences = traindata[:, 1]
         self.train_sentences = []
         self.test_sentences = []
-        print('reading and preprocessing training data')
-        for sentence in progressbar(raw_sentences):
-            sentence = pre_process(sentence)
-            self.train_sentences.append(sentence)
-            words = sentence.split()
-            self.sentence_lengths.append(len(words))
-            for word in words:
-                if word not in self.word2idx.keys():
-                    self.word2idx[word] = len(self.idx2word)
-                    self.idx2word.append(word)
-        for sentence in progressbar(test_data[:, 1]):
-            sentence = pre_process(sentence)
-            self.test_sentences.append(sentence)
+        if os.path.exists(train_preprocess_sentence_path):
+            self.train_sentences = np.load(train_preprocess_sentence_path).tolist()
+        else:
+            for sentence in progressbar(raw_sentences):
+                sentence = pre_process(sentence)
+                self.train_sentences.append(sentence)
+            np.save(train_preprocess_sentence_path, self.train_sentences)
+        if os.path.exists(test_preprocess_sentence_path):
+            self.test_sentences = np.load(test_preprocess_sentence_path).tolist()
+        else:
+            for sentence in progressbar(test_data[:, 1]):
+                sentence = pre_process(sentence)
+                self.test_sentences.append(sentence)
+            np.save(test_preprocess_sentence_path, self.test_sentences)
         self.word2idx['<unknown>'] = len(self.idx2word)
         self.idx2word.append('<unknown>')
-        self.labels = labels
-
-    def __len__(self):
-        return len(self.idx2word)
-
-
-class Corpus_v2:
-    def __init__(self):
-        super().__init__()
-        traindata = read_csv('data/train.csv')
-        traindata = traindata[1:]
-        test_data = read_csv('data/test.csv')
-        test_data = test_data[1:]
-        traindata = np.array([[row[0], ','.join(row[1:]).lower()] for row in traindata])
-        test_data = np.array([[row[0], ','.join(row[1:]).lower()] for row in test_data])
-        labels = np.array(list(map(lambda x: 0.0 if x == 'ham' else 1.0, traindata[:, 0])))
-        self.test_smsids = np.array(list(map(int, test_data[:, 0])), dtype=int)
-        raw_sentences = traindata[:, 1]
-        self.train_sentences = []
-        self.test_sentences = []
-        print('reading and preprocessing training data')
-        for sentence in progressbar(raw_sentences):
-            sentence = pre_process(sentence)
-            self.train_sentences.append(sentence)
-        for sentence in progressbar(test_data[:, 1]):
-            sentence = pre_process(sentence)
-            self.test_sentences.append(sentence)
-        vectorizer = TfidfVectorizer("english")
-        textFeatures = self.train_sentences.copy() + self.test_sentences.copy()
-        features_total = vectorizer.fit_transform(textFeatures)
-        num_train_and_dev = len(self.train_sentences)
-        self.train_features = features_total[0:num_train_and_dev]
-        self.test_features = features_total[num_train_and_dev:]
         self.labels = labels
 
     def __len__(self):

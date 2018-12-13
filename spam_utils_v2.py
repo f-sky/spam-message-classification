@@ -51,7 +51,6 @@ class Corpus_v2:
         raw_sentences = traindata[:, 1]
         self.train_sentences = []
         self.test_sentences = []
-        print('reading and preprocessing training data')
         if os.path.exists(train_preprocess_sentence_path):
             self.train_sentences = np.load(train_preprocess_sentence_path).tolist()
         else:
@@ -76,9 +75,9 @@ class Corpus_v2:
 
 
 class Model_v2(Module):
-    def __init__(self, corpus: Corpus_v2,max_len):
+    def __init__(self, corpus: Corpus_v2):
         super().__init__()
-        feature_size = max_len
+        feature_size=corpus.train_features[0].toarray().squeeze().shape[0]
         self.fcs = nn.Sequential(nn.Linear(in_features=feature_size, out_features=256),
                                  nn.ReLU(),
                                  nn.Linear(in_features=256, out_features=128),
@@ -92,22 +91,19 @@ class Model_v2(Module):
 
 
 class SpamSet_v2(Dataset):
-    def __init__(self, train, corpus: Corpus_v2, max_len):
+    def __init__(self, train, corpus: Corpus_v2):
         super().__init__()
         self.train = train
         self.corpus = corpus
         self.num_total = len(corpus.labels)
         self.num_train = int(0.7 * self.num_total)
         self.num_dev = self.num_total - self.num_train
-        self.max_len = max_len
 
     def __getitem__(self, index):
         idx = index if self.train else self.num_train + index
         x = self.corpus.train_features[idx]
         y = self.corpus.labels[idx]
-        x = x.data
-        x = single_edge_pad(x, self.max_len)
-        return torch.FloatTensor(x), torch.FloatTensor([y])
+        return torch.FloatTensor(x.toarray()), torch.FloatTensor([y])
 
     def __len__(self):
         return self.num_train if self.train else self.num_dev
@@ -149,8 +145,9 @@ def fit_v2(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_e
 
                 meters['loss'].update(loss.item(), nsamples)
                 for k, f in metrics_functions.items():
-                    result = f(scores.detach().cpu().numpy(),
-                               y.detach().cpu().numpy().astype(np.int64))
+                    result = f(y.detach().cpu().numpy().astype(np.int64),
+                               scores.detach().cpu().numpy())
+
                     meters[k].update(result, nsamples)
                 if phase == 'train':
                     loss.backward()
@@ -174,6 +171,6 @@ def fit_v2(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_e
 
 if __name__ == '__main__':
     corpus = Corpus_v2()
-    s = SpamSet_v2(True, corpus,max_len=30)
+    s = SpamSet_v2(True, corpus)
     x, y = s[1]
-    print(x)
+    print(x.shape)
