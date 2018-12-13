@@ -7,12 +7,13 @@ import torch
 from nltk import word_tokenize, SnowballStemmer
 from nltk.corpus import stopwords
 from progressbar import progressbar
+from sklearn.metrics import precision_score
 from torch import nn
 from torch.autograd import Variable
 from torch.nn import Module
 from torch.utils.data import Dataset
 
-from base_utils import History, AverageMeter, save_model, read_csv
+from base_utils import History, AverageMeter, save_model, read_csv, load_model
 
 
 def pre_process(text: str):
@@ -79,9 +80,9 @@ class Corpus:
 
 
 class Model(Module):
-    def __init__(self, corpus: Corpus, num_embeddings=None, embedding_dim=50, hidden_size=64, hidden_dim=32):
+    def __init__(self, corpus: Corpus, embedding_dim=50, hidden_size=64, hidden_dim=32):
         super().__init__()
-        num_embeddings = len(corpus) if num_embeddings is None else num_embeddings
+        num_embeddings = len(corpus)
         self.embedding = nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
         self.lstm = nn.LSTM(input_size=embedding_dim, hidden_size=hidden_size, batch_first=True)
         # self.fcs = nn.Sequential(nn.Linear(in_features=hidden_size, out_features=hidden_dim),
@@ -92,6 +93,10 @@ class Model(Module):
         #                          )
         self.fcs = nn.Sequential(nn.Linear(in_features=hidden_size, out_features=256),
                                  nn.ReLU(),
+                                 nn.Dropout(),
+                                 nn.Linear(in_features=256, out_features=128),
+                                 nn.ReLU(),
+                                 nn.Dropout(),
                                  nn.Linear(in_features=128, out_features=1),
                                  nn.Sigmoid()
                                  )
@@ -189,6 +194,45 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
             history.plot()
     if not plot_every_epoch:
         history.plot()
+
+
+def train_v1(model, loss_fn, optimizer, dataloaders, num_epochs, scheduler):
+    def compute_precision(y_true, y_pred):
+        return precision_score(y_true, y_pred >= 0.5)
+
+    metrics = {
+        'precision': compute_precision,
+    }
+    fit(model, loss_fn, optimizer, dataloaders, metrics_functions=metrics, num_epochs=num_epochs, scheduler=scheduler)
+
+
+def test_v1(corpus: Corpus, model, optimizer, max_len):
+    load_model(model, optimizer, 'data/model')
+    model.eval()
+    data = read_csv('data/test.csv')
+    data = data[1:]
+    data = np.array([[row[0], ','.join(row[1:]).lower()] for row in data])
+    smsids = np.array(list(map(int, data[:, 0])))
+    sentences = data[:, 1]
+    num_test = len(sentences)
+    sentence_indices = np.zeros((num_test, max_len), dtype=np.long)
+    for i, sentence in enumerate(sentences):
+        words = word_tokenize(sentence)
+        for j, word in enumerate(words):
+            if j >= max_len: break
+            if word in corpus.word2idx.keys():
+                sentence_indices[i, j] = corpus.word2idx[word]
+            else:
+                sentence_indices[i, j] = corpus.word2idx['<unknown>']
+    predictions = [['SmsId', 'Label']]
+    for i in progressbar(range(sentence_indices.shape[0])):
+        out = model(torch.LongTensor(sentence_indices[i]).reshape((1, -1)).cuda())
+        pred = out >= 0.5
+        pred = pred.cpu().numpy().squeeze()
+        predictions.append([smsids[i], 'spam' if pred == 1 else 'ham'])
+    with open('data/submission.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(predictions)
 
 
 if __name__ == '__main__':

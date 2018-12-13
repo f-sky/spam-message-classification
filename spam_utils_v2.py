@@ -8,12 +8,14 @@ from nltk import SnowballStemmer
 from nltk.corpus import stopwords
 from progressbar import progressbar
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import precision_score
 from torch import nn
 from torch.autograd import Variable
 from torch.nn import Module
 from torch.utils.data import Dataset
 
-from base_utils import History, AverageMeter, save_model,read_csv
+from base_utils import History, AverageMeter, save_model, read_csv, load_model
+
 
 def pre_process(text: str):
     # delete punctuations
@@ -71,7 +73,7 @@ class Corpus_v2:
 class Model_v2(Module):
     def __init__(self, corpus: Corpus_v2):
         super().__init__()
-        feature_size=corpus.train_features[0].toarray().squeeze().shape[0]
+        feature_size = corpus.train_features[0].toarray().squeeze().shape[0]
         self.fcs = nn.Sequential(nn.Linear(in_features=feature_size, out_features=128),
                                  nn.ReLU(),
                                  nn.Linear(in_features=128, out_features=64),
@@ -161,6 +163,34 @@ def fit_v2(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_e
             history.plot()
     if not plot_every_epoch:
         history.plot()
+
+
+def train_v2(model, loss_fn, optimizer, dataloaders, scheduler, num_epochs):
+    def compute_precision(y_true, y_pred):
+        return precision_score(y_true.squeeze(), y_pred.squeeze() >= 0.5)
+
+    metrics = {
+        'precision': compute_precision
+    }
+    fit_v2(model, loss_fn, optimizer, dataloaders, scheduler=scheduler, metrics_functions=metrics,
+           num_epochs=num_epochs)
+
+
+def test_v2(corpus: Corpus_v2, model, optimizer):
+    load_model(model, optimizer, 'data/model')
+    model.eval()
+    test_features = corpus.test_features.toarray()
+    smsids = corpus.test_smsids
+
+    predictions = [['SmsId', 'Label']]
+    for i in progressbar(range(test_features.shape[0])):
+        out = model(torch.FloatTensor(test_features[i]).reshape((1, -1)).cuda())
+        pred = out >= 0.5
+        pred = pred.cpu().numpy().squeeze()
+        predictions.append([smsids[i], 'spam' if pred == 1 else 'ham'])
+    with open('data/submission.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(predictions)
 
 
 if __name__ == '__main__':

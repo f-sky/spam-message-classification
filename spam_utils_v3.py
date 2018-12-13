@@ -4,18 +4,19 @@ import string
 
 import numpy as np
 import torch
-from nltk import word_tokenize, SnowballStemmer
+from nltk import SnowballStemmer
 from nltk.corpus import stopwords
 from progressbar import progressbar
+from sklearn.metrics import precision_score
 from torch import nn
 from torch.autograd import Variable
 from torch.nn import Module
 from torch.utils.data import Dataset
 
-from base_utils import History, AverageMeter, save_model, read_csv
+from base_utils import History, AverageMeter, save_model, read_csv, load_model
 
 
-def read_glove_vecs(glove_file='data/glove.6B.50d.txt'):
+def read_glove_vecs(glove_file):
     with open(glove_file, 'r', encoding='UTF-8') as f:
         words = set()
         word_to_vec_map = {}
@@ -49,10 +50,11 @@ def pre_process(text: str):
 
 
 class Corpus_v3:
-    def __init__(self):
+    def __init__(self, glove_file):
         super().__init__()
-        words_to_index, index_to_words, word_to_vec_map = read_glove_vecs()
-        self.weights = np.zeros((len(index_to_words) + 1, 50))
+        words_to_index, index_to_words, word_to_vec_map = read_glove_vecs(glove_file)
+        self.embedding_dim = word_to_vec_map['cucumber'].shape[0]
+        self.weights = np.zeros((len(index_to_words) + 1, self.embedding_dim))
         for word, idx in words_to_index.items():
             self.weights[idx] = word_to_vec_map[word]
         words_to_index['<pad>'] = 0
@@ -101,14 +103,18 @@ class Model_v3(Module):
     def __init__(self, corpus: Corpus_v3):
         super().__init__()
         num_embeddings = len(corpus)
-        self.embedding = nn.Embedding(num_embeddings=num_embeddings, embedding_dim=50)
+        self.embedding = nn.Embedding(num_embeddings=num_embeddings, embedding_dim=corpus.embedding_dim)
         self.embedding.weight.data.copy_(torch.from_numpy(corpus.weights))
         for param in self.embedding.parameters():
             param.requires_grad = False
-        self.lstm = nn.LSTM(input_size=50, hidden_size=128, batch_first=True)
-        self.fcs = nn.Sequential(nn.Linear(in_features=128, out_features=64),
+        self.lstm = nn.LSTM(input_size=corpus.embedding_dim, hidden_size=512, batch_first=True)
+        self.fcs = nn.Sequential(nn.Linear(in_features=512, out_features=256),
                                  nn.ReLU(),
-                                 nn.Linear(in_features=64, out_features=1),
+                                 nn.Dropout(),
+                                 nn.Linear(in_features=256, out_features=128),
+                                 nn.ReLU(),
+                                 nn.Dropout(),
+                                 nn.Linear(in_features=128, out_features=1),
                                  nn.Sigmoid()
                                  )
 
@@ -148,9 +154,9 @@ class SpamSet_v3(Dataset):
         return result
 
 
-def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epochs=1, scheduler=None, begin_epoch=0,
-        save=True,
-        save_model_dir='data/models', history=None, use_progressbar=False, plot_every_epoch=False):
+def fit_v3(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epochs=1, scheduler=None, begin_epoch=0,
+           save=True,
+           save_model_dir='data/models', history=None, use_progressbar=False, plot_every_epoch=False):
     if metrics_functions is None:
         metrics_functions = {}
     if save and save_model_dir is None:
@@ -209,6 +215,38 @@ def fit(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epoc
         history.plot()
 
 
-if __name__ == '__main__':
-    corpus = Corpus_v3()
-    print(len(corpus))
+def train_v3(model, loss_fn, optimizer, dataloaders, scheduler, num_epochs):
+    def compute_precision(y_true, y_pred):
+        return precision_score(y_true.squeeze(), y_pred.squeeze() >= 0.5)
+
+    metrics = {
+        'precision': compute_precision
+    }
+    fit_v3(model, loss_fn, optimizer, dataloaders, scheduler=scheduler, metrics_functions=metrics,
+           num_epochs=num_epochs)
+
+
+def test_v3(corpus: Corpus_v3, model, optimizer, max_len):
+    load_model(model, optimizer, 'data/model')
+    model.eval()
+
+    sentences = corpus.test_sentences
+    smsids = corpus.test_smsids
+    num_test = len(sentences)
+    sentence_indices = np.zeros((num_test, max_len), dtype=np.long)
+    for i, sentence in enumerate(sentences):
+        words = sentence.split()
+        for j, word in enumerate(words):
+            if j >= max_len: break
+            if word in corpus.word2idx.keys():
+                sentence_indices[i, j] = corpus.word2idx[word]
+
+    predictions = [['SmsId', 'Label']]
+    for i in progressbar(range(sentence_indices.shape[0])):
+        out = model(torch.LongTensor(sentence_indices[i]).reshape((1, -1)).cuda())
+        pred = out >= 0.5
+        pred = pred.cpu().numpy().squeeze()
+        predictions.append([smsids[i], 'spam' if pred == 1 else 'ham'])
+    with open('data/submission.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(predictions)
