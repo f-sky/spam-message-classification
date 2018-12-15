@@ -63,7 +63,7 @@ class Corpus_v3:
         # words_to_index['<unknown>'] = len(index_to_words) - 1
         self.word2idx = words_to_index
         self.idx2word = index_to_words
-
+        os.system('mkdir -p data/preprocess')
         sentence_paths = 'data/preprocess/{}'
         train_preprocess_sentence_path = sentence_paths.format('train.npy')
         test_preprocess_sentence_path = sentence_paths.format('test.npy')
@@ -133,9 +133,11 @@ class SpamSet_v3(Dataset):
         self.num_train = int(0.8 * self.num_total)
         self.num_dev = self.num_total - self.num_train
         self.max_len = max_len
+        self.perm = range(self.num_total)
 
     def __getitem__(self, index):
         idx = index if self.train else self.num_train + index
+        idx = self.perm[idx]
         sentence = self.corpus.train_sentences[idx]
         x = self.sentence_to_indices(sentence, self.max_len)
         y = self.corpus.labels[idx]
@@ -143,6 +145,9 @@ class SpamSet_v3(Dataset):
 
     def __len__(self):
         return self.num_train if self.train else self.num_dev
+
+    def set_perm(self, perm):
+        self.perm = perm
 
     def sentence_to_indices(self, sentence, max_len):
         words = sentence.split()
@@ -167,9 +172,13 @@ def fit_v3(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_e
     if history is None:
         history = History(['loss', *metrics_functions.keys()])
     max_len = dataloaders['train'].dataset.max_len
+    num_total = dataloaders['train'].dataset.num_total
     for epoch in range(begin_epoch, num_epochs):
+        perm = np.random.permutation(num_total)
         print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
         for phase in ['train', 'dev']:
+            if (epoch - begin_epoch) / (num_epochs - begin_epoch) > 0.5:
+                dataloaders[phase].dataset.set_perm(perm)
             meters = {'loss': AverageMeter()}
             for k in metrics_functions.keys():
                 meters[k] = AverageMeter()

@@ -1,5 +1,6 @@
 import csv
 import os
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -42,6 +43,7 @@ class History:
             self.records[k] = other.metrics[k]
 
     def plot(self):
+        os.system('mkdir -p log/history')
         fig = plt.figure(1)
         ax1 = fig.add_subplot(111)
         ax2 = ax1.twinx()
@@ -62,6 +64,7 @@ class History:
         ax1.set_xlabel('Epoch')
         ax2.set_ylabel('Metrics')
         ax1.legend(lns, labs, loc=7)
+        plt.savefig('log/history/{}.jpg'.format(datetime.now().strftime("%d-%h-%m-%s")))
         plt.show()
 
 
@@ -94,6 +97,7 @@ def save_model(net, optim, epoch, model_dir, history=None):
     if history is not None:
         obj['history'] = history
     torch.save(obj, os.path.join(model_dir, '{}.pth'.format(epoch)))
+
 
 def read_csv(filename):
     with open(filename) as csvDataFile:

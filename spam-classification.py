@@ -6,7 +6,7 @@ from spam_utils_v2 import *
 from spam_utils_v3 import Corpus_v3, Model_v3, SpamSet_v3, train_v3, test_v3
 from spam_utils_v4 import train_classifier, test_classifier
 
-num_epochs = 40
+num_epochs = 60
 max_len = 30
 
 
@@ -38,14 +38,14 @@ def version2():
 
 def version3():
     # --------------lstm pretrained weights by pytorch--------------------
-    corpus = Corpus_v3('data/glove.6B.300d.txt')
+    corpus = Corpus_v3('/home/linghao/Datasets/glove.6B.300d.txt')
     model = Model_v3(corpus).cuda()
-    optimizer = Adam(model.parameters(), lr=0.001)
+    optimizer = Adam(model.parameters(), lr=0.0003)
     loss_fn = nn.BCELoss().cuda()
     dataloaders = {'train': DataLoader(SpamSet_v3(True, corpus, max_len), batch_size=128, shuffle=True),
                    'dev': DataLoader(SpamSet_v3(False, corpus, max_len), batch_size=128, shuffle=False)}
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.3)
-    train_v3(model, loss_fn, optimizer, dataloaders, scheduler=None, num_epochs=num_epochs)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+    train_v3(model, loss_fn, optimizer, dataloaders, scheduler=scheduler, num_epochs=num_epochs)
     test_v3(corpus, model, optimizer, max_len=max_len)
 
 
