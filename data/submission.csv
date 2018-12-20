@@ -33,7 +33,7 @@ SmsId,Label
 3499,spam
 3155,ham
 2433,ham
-3753,spam
+3753,ham
 489,ham
 4579,ham
 5253,ham
@@ -84,9 +84,9 @@ SmsId,Label
 2184,ham
 684,ham
 4414,ham
-4966,spam
+4966,ham
 3630,ham
-1457,spam
+1457,ham
 971,ham
 2162,ham
 2971,ham
@@ -143,7 +143,7 @@ SmsId,Label
 2012,ham
 4396,ham
 3773,ham
-4963,spam
+4963,ham
 5564,ham
 2013,spam
 4065,ham
@@ -188,14 +188,14 @@ SmsId,Label
 3010,ham
 4889,ham
 521,ham
-4309,spam
+4309,ham
 1116,ham
 3269,ham
 873,ham
 5131,ham
 3368,ham
 3484,ham
-4067,spam
+4067,ham
 4601,ham
 4847,ham
 2600,ham
@@ -253,7 +253,7 @@ SmsId,Label
 5154,ham
 5331,ham
 1692,ham
-3545,ham
+3545,spam
 4988,ham
 2840,ham
 1098,ham
@@ -279,7 +279,7 @@ SmsId,Label
 3359,ham
 4031,ham
 5386,ham
-3883,spam
+3883,ham
 4004,ham
 2091,ham
 2182,ham
@@ -288,7 +288,7 @@ SmsId,Label
 1398,ham
 1675,ham
 2379,ham
-1939,spam
+1939,ham
 4643,ham
 593,ham
 2118,spam
@@ -323,7 +323,7 @@ SmsId,Label
 933,ham
 2329,ham
 2377,spam
-3304,ham
+3304,spam
 4650,spam
 4666,ham
 2294,spam
@@ -426,7 +426,7 @@ SmsId,Label
 5010,spam
 2575,ham
 5460,spam
-1327,spam
+1327,ham
 2266,spam
 349,ham
 1887,spam
@@ -467,7 +467,7 @@ SmsId,Label
 1275,ham
 3481,spam
 5051,ham
-528,spam
+528,ham
 3956,ham
 1700,ham
 4364,ham
@@ -537,7 +537,7 @@ SmsId,Label
 4759,ham
 5242,ham
 4445,ham
-751,spam
+751,ham
 3637,spam
 5496,ham
 2706,ham
@@ -878,7 +878,7 @@ SmsId,Label
 863,ham
 1358,ham
 3847,ham
-5449,spam
+5449,ham
 2574,spam
 2594,ham
 2832,spam
@@ -932,7 +932,7 @@ SmsId,Label
 483,ham
 5524,spam
 1625,ham
-1145,spam
+1145,ham
 4216,ham
 5264,ham
 3207,ham
@@ -972,7 +972,7 @@ SmsId,Label
 1430,ham
 5443,spam
 1974,ham
-5039,spam
+5039,ham
 3949,ham
 5032,ham
 2947,ham
@@ -986,7 +986,7 @@ SmsId,Label
 5335,ham
 2314,ham
 218,ham
-517,spam
+517,ham
 2340,ham
 1379,spam
 2247,spam
@@ -1018,7 +1018,7 @@ SmsId,Label
 3636,ham
 3063,ham
 1013,ham
-2401,spam
+2401,ham
 1545,ham
 3884,ham
 38,ham
@@ -1085,7 +1085,7 @@ SmsId,Label
 1642,ham
 3991,ham
 5156,ham
-3461,spam
+3461,ham
 5398,ham
 5057,ham
 203,ham

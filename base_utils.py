@@ -8,6 +8,7 @@ import torch
 from easydict import EasyDict
 
 
+
 class AverageMeter(EasyDict):
     """Computes and stores the average and current value"""
 
@@ -102,3 +103,5 @@ def save_model(net, optim, epoch, model_dir, history=None):
 def read_csv(filename):
     with open(filename) as csvDataFile:
         return np.array(list(csv.reader(csvDataFile)))
+
+

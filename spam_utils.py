@@ -14,13 +14,15 @@ from torch.nn import Module
 from torch.utils.data import Dataset
 
 from base_utils import History, AverageMeter, save_model, read_csv, load_model
+import visdom
 
 
 def read_glove_vecs(glove_file):
     with open(glove_file, 'r', encoding='UTF-8') as f:
         words = set()
         word_to_vec_map = {}
-        for line in f:
+        print('reading pretrained vectors..')
+        for line in progressbar(list(f)):
             line = line.strip().split()
             curr_word = line[0]
             words.add(curr_word)
@@ -33,6 +35,7 @@ def read_glove_vecs(glove_file):
             words_to_index[w] = i
             index_to_words[i] = w
             i = i + 1
+        print('done.')
     return words_to_index, index_to_words, word_to_vec_map
 
 
@@ -108,15 +111,16 @@ class Model_v3(Module):
         for param in self.embedding.parameters():
             param.requires_grad = False
         self.lstm = nn.LSTM(input_size=corpus.embedding_dim, hidden_size=512, batch_first=True)
-        self.fcs = nn.Sequential(nn.Linear(in_features=512, out_features=256),
-                                 nn.ReLU(),
-                                 nn.Dropout(),
-                                 nn.Linear(in_features=256, out_features=128),
-                                 nn.ReLU(),
-                                 nn.Dropout(),
-                                 nn.Linear(in_features=128, out_features=1),
-                                 nn.Sigmoid()
-                                 )
+        self.fcs = nn.Sequential(
+            nn.Linear(in_features=512, out_features=256),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(in_features=256, out_features=128),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(in_features=128, out_features=1),
+            nn.Sigmoid()
+        )
 
     def forward(self, x):
         embed = self.embedding(x)
@@ -159,20 +163,45 @@ class SpamSet_v3(Dataset):
         return result
 
 
+viz = visdom.Visdom()
+
+
+def create_vis_plot(_xlabel, _ylabel, _title, _legend, num_keys):
+    return viz.line(
+        X=torch.zeros((1,)).cpu(),
+        Y=torch.zeros((1, num_keys)).cpu(),
+        opts=dict(
+            xlabel=_xlabel,
+            ylabel=_ylabel,
+            title=_title,
+            legend=_legend
+        )
+    )
+
+
+def update_vis_plot(iteration, window1, update_type, *args):
+    viz.line(
+        X=torch.ones((1, len(args))).cpu() * iteration,
+        Y=torch.Tensor(args).unsqueeze(0).cpu(),
+        win=window1,
+        update=update_type
+    )
+
+
 def fit_v3(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_epochs=1, scheduler=None, begin_epoch=0,
-           save=True,
-           save_model_dir='data/models', history=None, use_progressbar=False, plot_every_epoch=False):
+           save_model_dir='data/models', history=None, use_progressbar=False):
     if metrics_functions is None:
         metrics_functions = {}
-    if save and save_model_dir is None:
-        raise Exception('save_model is True but no directory is specified.')
-    if save:
-        os.system('mkdir -p ' + save_model_dir)
+
+    os.system('mkdir -p ' + save_model_dir)
     num_epochs += begin_epoch
     if history is None:
         history = History(['loss', *metrics_functions.keys()])
     max_len = dataloaders['train'].dataset.max_len
     num_total = dataloaders['train'].dataset.num_total
+    vis_title = 'spam messgae classification'
+    vis_legend = ['loss', *metrics_functions.keys()]
+    epoch_plot = create_vis_plot('Epoch', 'Loss', vis_title, vis_legend, len(metrics_functions) + 1)
     for epoch in range(begin_epoch, num_epochs):
         perm = np.random.permutation(num_total)
         print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
@@ -189,7 +218,7 @@ def fit_v3(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_e
             else:
                 model.eval()
             loaders = progressbar(dataloaders[phase]) if use_progressbar else dataloaders[phase]
-            for data in loaders:
+            for it, data in enumerate(loaders):
                 x, y = data
                 x = x.reshape((-1, max_len))
                 nsamples = x.shape[0]
@@ -207,21 +236,18 @@ def fit_v3(model, loss_fn, optimizer, dataloaders, metrics_functions=None, num_e
                 if phase == 'train':
                     loss.backward()
                     optimizer.step()
-
             s = 'Epoch {}/{}, {}, loss = {:.4f}'.format(epoch + 1, num_epochs, phase, meters['loss'].avg)
-
+            avgs = []
             for k in metrics_functions.keys():
                 s += ', {} = {:.4f}'.format(k, meters[k].avg)
+                avgs.append(meters[k].avg)
             print(s)
             history.records['loss'][phase].append(meters['loss'].avg)
+            update_vis_plot(epoch, epoch_plot,
+                            'append', meters['loss'].avg, *avgs)
             for k in metrics_functions.keys():
                 history.records[k][phase].append(meters[k].avg)
-        if save:
-            save_model(model, optimizer, epoch, save_model_dir)
-        if plot_every_epoch:
-            history.plot()
-    if not plot_every_epoch:
-        history.plot()
+        save_model(model, optimizer, epoch, save_model_dir)
 
 
 def train_v3(model, loss_fn, optimizer, dataloaders, scheduler, num_epochs):
